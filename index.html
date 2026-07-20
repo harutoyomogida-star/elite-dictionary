@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>エリート辞典</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="app">
+
+    <!-- ヘッダー -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">典</span>
+        <span class="brand-name">エリート辞典</span>
+      </div>
+      <div class="topbar-right">
+        <span id="authStatus" class="auth-status">未ログイン</span>
+      </div>
+    </header>
+
+    <!-- メイン表示エリア -->
+    <main id="view" class="view"></main>
+
+    <!-- ボトムタブバー -->
+    <nav class="tabbar" id="tabbar">
+      <button class="tab-btn is-active" data-tab="dictionary">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none"><path d="M4 4.5C4 3.67 4.67 3 5.5 3H17a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7 3v16" stroke="currentColor" stroke-width="1.6"/><path d="M10 8h6M10 11.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>辞典</span>
+      </button>
+      <button class="tab-btn" data-tab="data">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="5.5" rx="7" ry="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M5 5.5V18.5C5 19.88 8.13 21 12 21C15.87 21 19 19.88 19 18.5V5.5" stroke="currentColor" stroke-width="1.6"/><path d="M5 12C5 13.38 8.13 14.5 12 14.5C15.87 14.5 19 13.38 19 12" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>データ</span>
+      </button>
+      <button class="tab-btn" data-tab="account">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="currentColor" stroke-width="1.6"/><path d="M4.5 20c1.2-3.8 4.4-6 7.5-6s6.3 2.2 7.5 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>アカウント</span>
+      </button>
+      <button class="tab-btn" data-tab="settings">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5v2.3M12 18.2v2.3M20.5 12h-2.3M5.8 12H3.5M17.7 6.3l-1.6 1.6M7.9 16.1l-1.6 1.6M17.7 17.7l-1.6-1.6M7.9 7.9 6.3 6.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>設定</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <script type="module" src="firebase-config.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
