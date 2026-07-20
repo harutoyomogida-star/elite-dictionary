@@ -6,7 +6,7 @@
 // 「SDK の設定と構成」の中にある firebaseConfig をコピーしてくる
 // ============================================================
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyBy0Gyby1WkfCa0Ox2y1jOxXmApAm9wex8",
   authDomain: "elite-dictionary.firebaseapp.com",
   projectId: "elite-dictionary",
