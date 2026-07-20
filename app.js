@@ -14,18 +14,14 @@ import {
   getFirestore, collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
   query, orderBy, serverTimestamp, setDoc
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import {
-  getStorage, ref, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
-
 // ---------- Firebase 初期化 ----------
+// ※ 画像はFirebase Storage(要課金設定)を使わず、縮小してFirestoreに直接埋め込む方式にしています。
 const isConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("ここに貼り付け");
-let app, auth, db, storage;
+let app, auth, db;
 if (isConfigured) {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-  storage = getStorage(app);
 }
 
 // ---------- グローバル状態 ----------
@@ -151,19 +147,38 @@ async function fetchHistory(id) {
   }
 }
 
-async function uploadImage(file, pathPrefix) {
-  if (!state.user) {
-    // ゲストモードはローカルのみ: Data URL として埋め込む(端末内限定)
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.readAsDataURL(file);
-    });
-  }
-  const path = `users/${state.user.uid}/${pathPrefix}/${Date.now()}_${file.name}`;
-  const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, file);
-  return await getDownloadURL(storageRef);
+// 画像を縮小してBase64(Data URL)に変換する。Storage不要・無料。
+// kind: "icons"(小さめ・正方形寄り) / "images"(本文用・少し大きめ)
+async function uploadImage(file, kind) {
+  const maxDim = kind === "icons" ? 320 : 900;
+  const quality = kind === "icons" ? 0.85 : 0.75;
+
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = reject;
+    im.src = dataUrl;
+  });
+
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const w = Math.round(img.width * scale);
+  const h = Math.round(img.height * scale);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, w, h);
+
+  // 透過を保ちたいPNGはpng、それ以外はjpegで軽量化
+  const isPng = file.type === "image/png";
+  return canvas.toDataURL(isPng ? "image/png" : "image/jpeg", quality);
 }
 
 // ============================================================
