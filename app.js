@@ -182,6 +182,110 @@ async function uploadImage(file, kind) {
 }
 
 // ============================================================
+// 内部リンク(項目間リンク)まわりのヘルパー
+// ============================================================
+
+// 正規表現の特殊文字をエスケープ
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// 「他の項目のタイトル」にマッチする正規表現と、タイトル→IDの対応表を作る
+function buildWikiRegex(entries, currentId) {
+  const seen = new Map();
+  entries
+    .filter(e => e.id !== currentId && e.title && e.title.trim().length > 0)
+    .map(e => ({ id: e.id, title: e.title.trim() }))
+    .sort((a, b) => b.title.length - a.title.length) // 長いタイトルを優先してマッチさせる
+    .forEach(t => { if (!seen.has(t.title)) seen.set(t.title, t.id); });
+  if (!seen.size) return null;
+  const pattern = [...seen.keys()].map(escapeRegExp).join("|");
+  return { regex: new RegExp(pattern, "g"), map: seen };
+}
+
+// 閲覧モードの本文表示時に、他の項目のタイトルが本文中に出てきたら
+// 自動で青いリンクに変換する(保存はされない・表示時のみの変換)
+function linkifyEntryContent(containerEl, entries, currentId) {
+  const built = buildWikiRegex(entries, currentId);
+  if (!built) return;
+  const { regex, map } = built;
+
+  const walker = document.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      if (node.parentElement && node.parentElement.closest("a")) return NodeFilter.FILTER_REJECT; // 既存リンクの中は対象外
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const textNodes = [];
+  let n;
+  while ((n = walker.nextNode())) textNodes.push(n);
+
+  textNodes.forEach(node => {
+    const text = node.nodeValue;
+    regex.lastIndex = 0;
+    if (!regex.test(text)) return;
+    regex.lastIndex = 0;
+
+    const frag = document.createDocumentFragment();
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(text))) {
+      if (match.index > lastIndex) frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      const a = document.createElement("a");
+      a.className = "wiki-link";
+      a.href = "#";
+      a.dataset.id = map.get(match[0]);
+      a.textContent = match[0];
+      frag.appendChild(a);
+      lastIndex = match.index + match[0].length;
+      if (match.index === regex.lastIndex) regex.lastIndex++;
+    }
+    if (lastIndex < text.length) frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+    node.parentNode.replaceChild(frag, node);
+  });
+}
+
+// 編集中の本文(contenteditable)の、指定した位置にHTMLを挿し込む
+function insertHtmlAtRange(containerEl, range, html) {
+  containerEl.focus();
+  const sel = window.getSelection();
+  let r = range;
+  if (!r || !containerEl.contains(r.startContainer)) {
+    if (sel.rangeCount && containerEl.contains(sel.anchorNode)) {
+      r = sel.getRangeAt(0);
+    } else {
+      containerEl.insertAdjacentHTML("beforeend", html);
+      return;
+    }
+  }
+  r.deleteContents();
+  const frag = r.createContextualFragment(html);
+  const lastNode = frag.lastChild;
+  r.insertNode(frag);
+  if (lastNode) {
+    r.setStartAfter(lastNode);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+}
+
+// 編集モードのリッチテキストツールバーのボタン一覧
+const RICH_COMMANDS = [
+  { cmd: "bold", label: "B", title: "太字" },
+  { cmd: "italic", label: "I", title: "斜体" },
+  { cmd: "underline", label: "U", title: "下線" },
+  { cmd: "h2", label: "見出し", title: "見出しにする" },
+  { cmd: "ul", label: "・リスト", title: "箇条書きリスト" },
+  { cmd: "ol", label: "1.リスト", title: "番号リスト" },
+  { cmd: "quote", label: "引用", title: "引用ブロック" },
+  { cmd: "hr", label: "区切り線", title: "区切り線を挿入" },
+  { cmd: "link", label: "外部リンク", title: "外部サイトへのリンクを挿入" },
+  { cmd: "wikilink", label: "項目リンク", title: "他の項目へのリンクを挿入" },
+];
+
+// ============================================================
 // 描画: ルーター
 // ============================================================
 function render() {
@@ -270,7 +374,30 @@ function renderEntryDetail(id) {
       <button class="btn btn-danger" id="deleteEntryBtn">削除</button>
     </div>
 
+    ${state.editMode ? `
+      <div class="rich-toolbar" id="richToolbar">
+        ${RICH_COMMANDS.map(c => `<button type="button" class="rt-btn" data-cmd="${c.cmd}" title="${c.title}">${c.label}</button>`).join("")}
+        <span class="rt-sep"></span>
+        <button type="button" class="rt-btn" data-cmd="undo" title="元に戻す">↺</button>
+        <button type="button" class="rt-btn" data-cmd="redo" title="やり直し">↻</button>
+      </div>
+      <div class="link-picker" id="linkPicker" hidden>
+        <input type="text" id="linkPickerSearch" placeholder="リンクしたい項目名で検索…">
+        <div class="link-picker-list" id="linkPickerList"></div>
+      </div>
+    ` : ""}
+
     <div class="content-body" id="contentBody" contenteditable="${state.editMode}">${entry.content || (state.editMode ? "" : "<em style='color:var(--ink-faint)'>本文はまだありません。編集するから書き始めましょう。</em>")}</div>
+
+    ${state.editMode ? `
+      <div class="image-tools-panel" id="imageToolsPanel" hidden>
+        <span class="setting-desc">選択中の画像:</span>
+        <button type="button" class="btn" data-size="25%">小</button>
+        <button type="button" class="btn" data-size="50%">中</button>
+        <button type="button" class="btn" data-size="100%">大</button>
+        <button type="button" class="btn btn-danger" id="deleteImageBtn">画像を削除</button>
+      </div>
+    ` : ""}
 
     <div class="history-rail">
       <div class="eyebrow">変更履歴</div>
@@ -298,7 +425,22 @@ function renderEntryDetail(id) {
     render();
   });
 
+  const contentBody = document.getElementById("contentBody");
+
   if (state.editMode) {
+    // ---- 選択範囲(カーソル位置)の記憶 ----
+    let savedRange = null;
+    const saveSelection = () => {
+      const sel = window.getSelection();
+      if (sel.rangeCount && contentBody.contains(sel.anchorNode)) {
+        savedRange = sel.getRangeAt(0).cloneRange();
+      }
+    };
+    contentBody.addEventListener("keyup", saveSelection);
+    contentBody.addEventListener("mouseup", saveSelection);
+    contentBody.addEventListener("focus", saveSelection);
+
+    // ---- アイコン画像変更 ----
     const iconBtn = document.getElementById("iconUploadBtn");
     const iconFile = document.getElementById("iconFileInput");
     iconBtn.addEventListener("click", () => iconFile.click());
@@ -312,6 +454,7 @@ function renderEntryDetail(id) {
       showToast("アイコンを更新しました");
     });
 
+    // ---- 本文への画像挿入(カーソル位置に挿す) ----
     const contentBtn = document.getElementById("insertImageBtn");
     const contentFile = document.getElementById("contentFileInput");
     contentBtn.addEventListener("click", () => contentFile.click());
@@ -319,14 +462,128 @@ function renderEntryDetail(id) {
       const file = contentFile.files[0]; if (!file) return;
       showToast("アップロード中…");
       const url = await uploadImage(file, "images");
-      const body = document.getElementById("contentBody");
-      body.innerHTML += `<img src="${url}" alt="">`;
+      insertHtmlAtRange(contentBody, savedRange, `<img src="${url}" alt="">`);
+      saveSelection();
       showToast("画像を挿入しました");
     });
 
     document.getElementById("saveEntryBtn").addEventListener("click", async () => {
       await commitEdits(entry);
       showToast("保存しました");
+      render();
+    });
+
+    // ---- リッチテキストツールバー ----
+    const linkPicker = document.getElementById("linkPicker");
+    const linkPickerSearch = document.getElementById("linkPickerSearch");
+    const linkPickerList = document.getElementById("linkPickerList");
+
+    function toggleLinkPicker(show) {
+      linkPicker.hidden = !show;
+      if (show) {
+        linkPickerSearch.value = "";
+        renderLinkPickerList("");
+        linkPickerSearch.focus();
+      }
+    }
+    function renderLinkPickerList(query) {
+      const q = query.trim().toLowerCase();
+      const candidates = state.entries
+        .filter(e => e.id !== entry.id && (e.title || "").toLowerCase().includes(q))
+        .slice(0, 20);
+      linkPickerList.innerHTML = candidates.length
+        ? candidates.map(e => `<div class="link-picker-item" data-id="${e.id}" data-title="${escapeAttr(e.title || "")}">${escapeHtml(e.title || "無題の項目")}</div>`).join("")
+        : `<div class="link-picker-item" style="color:var(--ink-faint);cursor:default;">該当する項目がありません</div>`;
+      linkPickerList.querySelectorAll(".link-picker-item[data-id]").forEach(item => {
+        item.addEventListener("click", () => {
+          const targetId = item.dataset.id;
+          const targetTitle = item.dataset.title;
+          insertHtmlAtRange(contentBody, savedRange, `<a class="wiki-link" data-id="${targetId}">${escapeHtml(targetTitle)}</a>&nbsp;`);
+          saveSelection();
+          toggleLinkPicker(false);
+        });
+      });
+    }
+    linkPickerSearch.addEventListener("input", () => renderLinkPickerList(linkPickerSearch.value));
+
+    document.querySelectorAll("#richToolbar .rt-btn").forEach(btn => {
+      btn.addEventListener("mousedown", (e) => {
+        e.preventDefault(); // ボタン押下でフォーカス/選択範囲が消えるのを防ぐ
+        const cmd = btn.dataset.cmd;
+        contentBody.focus();
+        if (savedRange) {
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(savedRange);
+        }
+        switch (cmd) {
+          case "bold": document.execCommand("bold"); break;
+          case "italic": document.execCommand("italic"); break;
+          case "underline": document.execCommand("underline"); break;
+          case "h2": document.execCommand("formatBlock", false, "H2"); break;
+          case "ul": document.execCommand("insertUnorderedList"); break;
+          case "ol": document.execCommand("insertOrderedList"); break;
+          case "quote": document.execCommand("formatBlock", false, "BLOCKQUOTE"); break;
+          case "hr": insertHtmlAtRange(contentBody, savedRange, "<hr>"); break;
+          case "undo": document.execCommand("undo"); break;
+          case "redo": document.execCommand("redo"); break;
+          case "link": {
+            const url = prompt("リンク先のURLを入力してください(https://…)");
+            if (!url) return;
+            const sel = window.getSelection();
+            const label = sel && sel.toString() ? sel.toString() : url;
+            insertHtmlAtRange(contentBody, savedRange, `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>`);
+            break;
+          }
+          case "wikilink": {
+            toggleLinkPicker(true);
+            break;
+          }
+        }
+        saveSelection();
+      });
+    });
+
+    // ---- 画像の選択・サイズ変更・削除 ----
+    const imgPanel = document.getElementById("imageToolsPanel");
+    let selectedImage = null;
+    contentBody.addEventListener("click", (e) => {
+      const img = e.target.closest("img");
+      contentBody.querySelectorAll("img.img-selected").forEach(i => i.classList.remove("img-selected"));
+      if (img) {
+        e.preventDefault();
+        selectedImage = img;
+        img.classList.add("img-selected");
+        imgPanel.hidden = false;
+      } else {
+        selectedImage = null;
+        imgPanel.hidden = true;
+      }
+    });
+    imgPanel.querySelectorAll("button[data-size]").forEach(b => {
+      b.addEventListener("click", () => {
+        if (!selectedImage) return;
+        selectedImage.style.width = b.dataset.size;
+        selectedImage.style.height = "auto";
+      });
+    });
+    document.getElementById("deleteImageBtn").addEventListener("click", () => {
+      if (!selectedImage) return;
+      if (!confirm("この画像を削除しますか?")) return;
+      selectedImage.remove();
+      selectedImage = null;
+      imgPanel.hidden = true;
+    });
+
+  } else {
+    // ---- 閲覧モード: 他の項目タイトルを自動で青リンク化 ----
+    linkifyEntryContent(contentBody, state.entries, entry.id);
+    contentBody.addEventListener("click", (e) => {
+      const link = e.target.closest("a.wiki-link");
+      if (!link || !link.dataset.id) return;
+      e.preventDefault();
+      state.currentEntryId = link.dataset.id;
+      state.editMode = false;
       render();
     });
   }
