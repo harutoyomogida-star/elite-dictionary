@@ -6,11 +6,11 @@
 // 「SDK の設定と構成」の中にある firebaseConfig をコピーしてくる
 // ============================================================
 
-export const firebaseConfig = {
-  apiKey: "ここに貼り付け",
-  authDomain: "ここに貼り付け",
-  projectId: "ここに貼り付け",
-  storageBucket: "ここに貼り付け",
-  messagingSenderId: "ここに貼り付け",
-  appId: "ここに貼り付け"
+const firebaseConfig = {
+  apiKey: "AIzaSyBy0Gyby1WkfCa0Ox2y1jOxXmApAm9wex8",
+  authDomain: "elite-dictionary.firebaseapp.com",
+  projectId: "elite-dictionary",
+  storageBucket: "elite-dictionary.firebasestorage.app",
+  messagingSenderId: "1017772665326",
+  appId: "1:1017772665326:web:a365f7ba81c6718f2ec6ff"
 };
