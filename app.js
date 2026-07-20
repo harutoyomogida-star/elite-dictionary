@@ -308,6 +308,7 @@ function renderEntryDetail(id) {
       const url = await uploadImage(file, "icons");
       entry.iconURL = url;
       document.getElementById("iconWrap").innerHTML = `<img src="${url}" alt="">`;
+      await saveEntry(entry.id, { iconURL: url }, { pushHistory: false });
       showToast("アイコンを更新しました");
     });
 
